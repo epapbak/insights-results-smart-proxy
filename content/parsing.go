@@ -99,7 +99,7 @@ func LoadRuleContent(contentDir *ctypes.RuleContentDirectory) {
 			})
 		}
 	}
-	rulesWithContentStorage.Swap(s)
+	rulesWithContentStorage = s
 }
 
 // According to rule content specification, it's explicitly defined as floor((impact + likelihood) / 2), which

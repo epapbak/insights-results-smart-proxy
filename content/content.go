@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/RedHatInsights/insights-operator-utils/generators"
@@ -36,7 +35,7 @@ var (
 	ruleContentDirectory      *ctypes.RuleContentDirectory
 	ruleContentDirectoryReady = sync.NewCond(&sync.Mutex{})
 	stopUpdateContentLoop     = make(chan struct{})
-	rulesWithContentStorage   = atomic.Value{}
+	rulesWithContentStorage   = getEmptyRulesWithContentMap()
 	contentDirectoryTimeout   = 5 * time.Second
 	dotReport                 = ".report"
 )
@@ -235,7 +234,7 @@ func GetRuleWithErrorKeyContent(
 
 	ruleID = ctypes.RuleID(strings.TrimSuffix(string(ruleID), dotReport))
 
-	res, found := rulesWithContentStorage.Load().(*RulesWithContentStorage).GetRuleWithErrorKeyContent(ruleID, errorKey)
+	res, found := rulesWithContentStorage.GetRuleWithErrorKeyContent(ruleID, errorKey)
 	if !found {
 		return nil, &utypes.ItemNotFoundError{ItemID: fmt.Sprintf("%v/%v", ruleID, errorKey)}
 	}
@@ -254,7 +253,7 @@ func GetContentForRecommendation(
 		return nil, err
 	}
 
-	res, found := rulesWithContentStorage.Load().(*RulesWithContentStorage).GetContentForRecommendation(ruleID)
+	res, found := rulesWithContentStorage.GetContentForRecommendation(ruleID)
 	if !found {
 		return nil, &utypes.ItemNotFoundError{ItemID: fmt.Sprintf("%v", ruleID)}
 	}
@@ -293,7 +292,7 @@ func getRuleContent(ruleID ctypes.RuleID) (*ctypes.RuleContent, error) {
 
 	ruleID = ctypes.RuleID(strings.TrimSuffix(string(ruleID), dotReport))
 
-	res, found := rulesWithContentStorage.Load().(*RulesWithContentStorage).getRuleContent(ruleID)
+	res, found := rulesWithContentStorage.getRuleContent(ruleID)
 	if !found {
 		return nil, &utypes.ItemNotFoundError{ItemID: ruleID}
 	}
@@ -313,8 +312,7 @@ func getEmptyRulesWithContentMap() *RulesWithContentStorage {
 
 // ResetContent clear all the content cached
 func ResetContent() {
-	s := getEmptyRulesWithContentMap()
-	rulesWithContentStorage.Swap(s)
+	rulesWithContentStorage = getEmptyRulesWithContentMap()
 }
 
 // GetRuleIDs returns a list of rule IDs (rule modules)
@@ -325,7 +323,7 @@ func GetRuleIDs() ([]string, error) {
 		return nil, err
 	}
 
-	return rulesWithContentStorage.Load().(*RulesWithContentStorage).GetRuleIDs(), nil
+	return rulesWithContentStorage.GetRuleIDs(), nil
 }
 
 // GetInternalRuleIDs returns a list of composite rule IDs ("| format") of internal rules
@@ -336,7 +334,7 @@ func GetInternalRuleIDs() ([]ctypes.RuleID, error) {
 		return nil, err
 	}
 
-	return rulesWithContentStorage.Load().(*RulesWithContentStorage).GetInternalRuleIDs(), nil
+	return rulesWithContentStorage.GetInternalRuleIDs(), nil
 }
 
 // GetExternalRuleIDs returns a list of composite rule IDs ("| format") of external rules
@@ -347,7 +345,7 @@ func GetExternalRuleIDs() ([]ctypes.RuleID, error) {
 		return nil, err
 	}
 
-	return rulesWithContentStorage.Load().(*RulesWithContentStorage).GetExternalRuleIDs(), nil
+	return rulesWithContentStorage.GetExternalRuleIDs(), nil
 }
 
 // GetExternalRuleSeverities returns a map of rule IDs and their severity (total risk),
@@ -363,7 +361,7 @@ func GetExternalRuleSeverities() (
 		return nil, nil, err
 	}
 
-	severityMap, uniqueSeverities := rulesWithContentStorage.Load().(*RulesWithContentStorage).GetExternalRuleSeverities()
+	severityMap, uniqueSeverities := rulesWithContentStorage.GetExternalRuleSeverities()
 	return severityMap, uniqueSeverities, nil
 }
 
@@ -378,7 +376,7 @@ func GetExternalRulesManagedInfo() (
 		return nil, err
 	}
 
-	managedMap := rulesWithContentStorage.Load().(*RulesWithContentStorage).GetExternalRulesManagedInfo()
+	managedMap := rulesWithContentStorage.GetExternalRulesManagedInfo()
 	return managedMap, nil
 }
 
@@ -391,7 +389,7 @@ func GetAllContentV1() ([]types.RuleContentV1, error) {
 		return nil, err
 	}
 
-	return rulesWithContentStorage.Load().(*RulesWithContentStorage).GetAllContentV1(), nil
+	return rulesWithContentStorage.GetAllContentV1(), nil
 }
 
 // GetAllContentV2 returns content for api v2
@@ -403,7 +401,7 @@ func GetAllContentV2() ([]types.RuleContentV2, error) {
 		return nil, err
 	}
 
-	return rulesWithContentStorage.Load().(*RulesWithContentStorage).GetAllContentV2(), nil
+	return rulesWithContentStorage.GetAllContentV2(), nil
 }
 
 // RunUpdateContentLoop runs loop which updates rules content by ticker
