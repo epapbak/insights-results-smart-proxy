@@ -130,9 +130,6 @@ func (s *RulesWithContentStorage) SetRuleWithContent(
 		log.Error().Err(err).Msgf("Error generating composite rule ID for [%v] and [%v]", ruleID, errorKey)
 	}
 
-	s.Lock()
-	defer s.Unlock()
-
 	s.rulesWithContent[ruleIDAndErrorKey{
 		RuleID:   ruleID,
 		ErrorKey: errorKey,
@@ -149,9 +146,6 @@ func (s *RulesWithContentStorage) SetRuleWithContent(
 func (s *RulesWithContentStorage) SetRule(
 	ruleID ctypes.RuleID, ruleContent *ctypes.RuleContent,
 ) {
-	s.Lock()
-	defer s.Unlock()
-
 	s.rules[ruleID] = ruleContent
 }
 

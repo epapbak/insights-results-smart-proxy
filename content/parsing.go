@@ -42,6 +42,8 @@ var (
 
 // LoadRuleContent loads the parsed rule content into the storage
 func LoadRuleContent(contentDir *ctypes.RuleContentDirectory) {
+	rulesWithContentStorage.Lock()
+	defer rulesWithContentStorage.Unlock()
 	for i, rule := range contentDir.Rules {
 		ruleID := ctypes.RuleID(rule.Plugin.PythonModule)
 
