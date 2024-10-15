@@ -51,6 +51,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/RedHatInsights/insights-results-smart-proxy/amsclient"
+	"github.com/RedHatInsights/insights-results-smart-proxy/auth"
 	"github.com/RedHatInsights/insights-results-smart-proxy/content"
 	"github.com/RedHatInsights/insights-results-smart-proxy/services"
 
@@ -106,6 +107,7 @@ type HTTPServer struct {
 	ErrorChannel      chan error
 	Serv              *http.Server
 	redis             services.RedisInterface
+	rbacClient        auth.RBACClient
 }
 
 // RequestModifier is a type of function which modifies request when proxying
@@ -129,6 +131,7 @@ func New(config Configuration,
 	groupsChannel chan []groups.Group,
 	errorFoundChannel chan bool,
 	errorChannel chan error,
+	rbacClient auth.RBACClient,
 ) *HTTPServer {
 	return &HTTPServer{
 		Config:            config,
@@ -139,6 +142,7 @@ func New(config Configuration,
 		GroupsChannel:     groupsChannel,
 		ErrorFoundChannel: errorFoundChannel,
 		ErrorChannel:      errorChannel,
+		rbacClient:        rbacClient,
 	}
 }
 
@@ -418,7 +422,7 @@ func (server HTTPServer) readClusterInfoForOrgID(orgID ctypes.OrgID) (
 
 	if !server.Config.UseOrgClustersFallback {
 		err := fmt.Errorf("amsclient not initialized")
-		log.Error().Err(err).Msg("")
+		log.Error().Err(err).Send()
 		return nil, err
 	}
 
@@ -1216,7 +1220,7 @@ func (server *HTTPServer) checkInternalRulePermissions(request *http.Request) er
 
 	// If the loop ends without returning nil, then an authentication error should be raised
 	const message = "This organization is not allowed to access this recommendation"
-	return &AuthenticationError{ErrString: message}
+	return &auth.AuthenticationError{ErrString: message}
 }
 
 // getGroupsConfig retrieves the groups configuration from a channel to get the

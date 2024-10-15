@@ -279,7 +279,7 @@ func TestHTTPServer_TestReadAckListInvalidToken(t *testing.T) {
 
 	ackListResponse := `
 	{
-		"status": "Malformed authentication token"
+		"status": "Invalid/Malformed auth token"
 	}
 	`
 	helpers.AssertAPIv2Request(t, nil, nil, nil, nil, nil, &helpers.APIRequest{

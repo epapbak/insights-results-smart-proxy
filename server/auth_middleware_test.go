@@ -16,10 +16,13 @@ package server_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/RedHatInsights/insights-results-smart-proxy/auth"
 	"github.com/RedHatInsights/insights-results-smart-proxy/tests/helpers"
 
 	"github.com/RedHatInsights/insights-results-smart-proxy/server"
@@ -29,60 +32,25 @@ import (
 )
 
 type testCase struct {
-	name             string
-	identity         string
-	expectedError    string
-	expectedIdentity types.Identity
-	expectedUserID   types.UserID
-	expectedOrgID    types.OrgID
+	name           string
+	identity       string
+	expectedError  string
+	expectedUserID types.UserID
+	expectedOrgID  types.OrgID
 }
 
 var (
-	validIdentityXRH = types.Identity{
-		AccountNumber: types.UserID("1"),
-		OrgID:         1,
-		User: types.User{
-			UserID: types.UserID("1"),
+	validIdentityXRH = types.Token{
+		Identity: types.Identity{
+			AccountNumber: types.UserID("1"),
+			OrgID:         1,
+			User: types.User{
+				UserID: types.UserID("1"),
+			},
+			Type: "ServiceAccount",
 		},
 	}
 )
-
-func TestGetAuthToken(t *testing.T) {
-	testCases := []testCase{
-		{
-			name:             "valid token",
-			identity:         "valid",
-			expectedError:    "",
-			expectedIdentity: validIdentityXRH,
-		},
-		{
-			name:          "no token",
-			identity:      "empty",
-			expectedError: "token is not provided",
-		},
-		{
-			name:          "invalid token",
-			identity:      "bad",
-			expectedError: "contextKeyUser has wrong type",
-		},
-	}
-
-	testServer := server.HTTPServer{}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			req := getRequest(t, tc.identity)
-
-			identity, err := testServer.GetAuthToken(req)
-			if tc.expectedError == "" {
-				require.NoError(t, err)
-				assert.Equal(t, &tc.expectedIdentity, identity)
-			} else {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedError)
-			}
-		})
-	}
-}
 
 func TestGetCurrentUserID(t *testing.T) {
 	testCases := []testCase{
@@ -90,7 +58,7 @@ func TestGetCurrentUserID(t *testing.T) {
 			name:           "valid token",
 			identity:       "valid",
 			expectedError:  "",
-			expectedUserID: validIdentityXRH.User.UserID,
+			expectedUserID: validIdentityXRH.Identity.User.UserID,
 		},
 		{
 			name:          "no token",
@@ -127,7 +95,7 @@ func TestGetCurrentOrgID(t *testing.T) {
 			name:          "valid token",
 			identity:      "valid",
 			expectedError: "",
-			expectedOrgID: validIdentityXRH.OrgID,
+			expectedOrgID: validIdentityXRH.Identity.OrgID,
 		},
 		{
 			name:          "no token",
@@ -144,6 +112,7 @@ func TestGetCurrentOrgID(t *testing.T) {
 	testServer := server.HTTPServer{}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+
 			req := getRequest(t, tc.identity)
 
 			orgID, err := testServer.GetCurrentOrgID(req)
@@ -164,8 +133,8 @@ func TestGetCurrentOrgIDUserIDFromToken(t *testing.T) {
 			name:           "valid token",
 			identity:       "valid",
 			expectedError:  "",
-			expectedOrgID:  validIdentityXRH.OrgID,
-			expectedUserID: validIdentityXRH.User.UserID,
+			expectedOrgID:  validIdentityXRH.Identity.OrgID,
+			expectedUserID: validIdentityXRH.Identity.User.UserID,
 		},
 		{
 			name:          "no token",
@@ -206,47 +175,19 @@ func TestGetCurrentOrgIDUserIDFromToken(t *testing.T) {
 }
 
 func TestGetAuthTokenXRHHeader(t *testing.T) {
-	s := helpers.CreateHTTPServer(
-		&helpers.DefaultServerConfig,
-		&helpers.DefaultServicesConfig,
-		nil, nil, nil, nil, nil,
-	)
-
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		server.GetAuthTokenHeader(s, w, r)
+		auth.GetAuthTokenHeader(r)
 	})
 
 	request, err := http.NewRequest(http.MethodGet, "an url", http.NoBody)
 	assert.NoError(t, err)
-	request.Header.Set(server.XRHAuthTokenHeader, "token")
+	request.Header.Set(auth.XRHAuthTokenHeader, "token")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
 	// if xrh auth type is used, contents of header are checked in different function, thus only calling GetAuthTokenHeader is successful
 	assert.Equal(t, http.StatusOK, recorder.Code)
-}
-
-func TestGetXRHAuthTokenEmpty(t *testing.T) {
-	s := helpers.CreateHTTPServer(
-		&helpers.DefaultServerConfig,
-		&helpers.DefaultServicesConfig,
-		nil, nil, nil, nil, nil,
-	)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		server.GetAuthTokenHeader(s, w, r)
-	})
-
-	request, err := http.NewRequest(http.MethodGet, "an url", http.NoBody)
-	assert.NoError(t, err)
-	request.Header.Set(server.XRHAuthTokenHeader, "")
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
-
-	assert.Equal(t, recorder.Code, http.StatusForbidden)
-	assert.Contains(t, recorder.Body.String(), "Missing auth token")
 }
 
 // TestUnsupportedAuthType checks how that only "xrh" auth type is supported
@@ -263,27 +204,6 @@ func TestUnsupportedAuthType(t *testing.T) {
 	})
 }
 
-func TestGetAuthTokenHeaderMissing(t *testing.T) {
-	s := helpers.CreateHTTPServer(
-		&helpers.DefaultServerConfig,
-		&helpers.DefaultServicesConfig,
-		nil, nil, nil, nil, nil,
-	)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		server.GetAuthTokenHeader(s, w, r)
-	})
-
-	request, err := http.NewRequest(http.MethodGet, "an url", http.NoBody)
-	assert.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
-
-	assert.Equal(t, recorder.Code, http.StatusForbidden)
-	assert.Contains(t, recorder.Body.String(), "Missing auth token")
-}
-
 func getRequest(t *testing.T, identity string) *http.Request {
 	t.Helper()
 
@@ -291,7 +211,7 @@ func getRequest(t *testing.T, identity string) *http.Request {
 	assert.NoError(t, err)
 
 	if identity == "valid" {
-		ctx := context.WithValue(req.Context(), types.ContextKeyUser, validIdentityXRH)
+		ctx := context.WithValue(req.Context(), types.ContextKeyUser, validIdentityXRH.Identity)
 		req = req.WithContext(ctx)
 	}
 
@@ -301,4 +221,110 @@ func getRequest(t *testing.T, identity string) *http.Request {
 	}
 
 	return req
+}
+
+// Tests for authorization middleware
+// MockRBACClient is a mock implementation of the RBAC client for testing
+type MockRBACClient struct {
+	authorized bool
+	enforcing  bool
+}
+
+func (m *MockRBACClient) IsAuthorized(token string) bool {
+	return m.authorized
+}
+
+func (m *MockRBACClient) IsEnforcing() bool {
+	return m.enforcing
+}
+
+func TestAuthorizationMiddleware(t *testing.T) {
+
+	// Convert validIdentityXRH to JSON
+	jsonData, err := json.Marshal(validIdentityXRH)
+	if err != nil {
+		panic(err) // Handle error appropriately in production code
+	}
+
+	token := base64.StdEncoding.EncodeToString(jsonData)
+
+	testCases := []struct {
+		name           string
+		xrhHeader      types.Token
+		rbacClient     *MockRBACClient
+		expectedStatus int
+	}{
+		{
+			name: "valid service account with permissions",
+			xrhHeader: types.Token{
+				Identity: types.Identity{
+					AccountNumber: types.UserID("1"),
+					OrgID:         1,
+					User: types.User{
+						UserID: types.UserID("service-account-id"),
+					},
+					Type: "ServiceAccount",
+				}},
+			rbacClient:     &MockRBACClient{authorized: true, enforcing: true},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "valid service account without permissions",
+			xrhHeader: types.Token{
+				Identity: types.Identity{
+					AccountNumber: types.UserID("1"),
+					OrgID:         1,
+					User: types.User{
+						UserID: types.UserID("service-account-id"),
+					},
+					Type: "ServiceAccount",
+				}},
+			rbacClient:     &MockRBACClient{authorized: false, enforcing: true},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name: "unknown identity type",
+			xrhHeader: types.Token{
+				Identity: types.Identity{
+					AccountNumber: types.UserID("1"),
+					OrgID:         1,
+					User: types.User{
+						UserID: types.UserID("user-id"),
+					},
+					Type: "UnknownType",
+				}},
+			rbacClient:     &MockRBACClient{authorized: false, enforcing: true},
+			expectedStatus: http.StatusForbidden,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			// Set the authorization header, anything but an empty string is enough for these UTs
+			req.Header.Set("x-rh-identity", token)
+
+			// Set the context with the identity
+			ctx := context.WithValue(req.Context(), types.ContextKeyUser, tc.xrhHeader)
+			req = req.WithContext(ctx)
+
+			recorder := httptest.NewRecorder()
+			testServer := server.HTTPServer{
+				Config: server.Configuration{
+					AuthType: "xrh",
+				},
+			}
+			testServer.SetRBACClient(tc.rbacClient)
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Placeholder to wrap with Authorization handler
+				w.WriteHeader(http.StatusOK)
+			})
+
+			authHandler := testServer.Authorization(handler)
+
+			authHandler.ServeHTTP(recorder, req)
+
+			assert.Equal(t, tc.expectedStatus, recorder.Code)
+		})
+	}
 }
