@@ -30,6 +30,7 @@ import (
 type RBACClient interface {
 	IsAuthorized(token string) bool
 	IsEnforcing() bool
+	// IsEnabled() bool
 }
 
 type rbacClientImpl struct {
@@ -56,6 +57,8 @@ func NewRBACClient(conf *RBACConfig) (RBACClient, error) {
 	}, nil
 }
 
+// IsEnforcing returns wether requests should be denied if the requester does not
+// have the correct permissions.
 func (rc *rbacClientImpl) IsEnforcing() bool {
 	return rc.enforceAuth
 }
